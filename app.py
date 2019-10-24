@@ -1,10 +1,12 @@
 
-from flask import Flask
+from flask import Flask, jsonify
 import numpy as np
 import sqlalchemy
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, func
+from datetime import datetime, timedelta
+import datetime as dt
 
 
 
@@ -31,8 +33,10 @@ def index():
         f"/api/v1.0/precipitation<br/>"
         f"/api/v1.0/stations<br/>"
         f"/api/v1.0/tobs<br/>"
-        f"/api/v1.0/<start><br/>"
-        f"/api/v1.0/<start>/<end>"
+        f"/api/v1.0/start<br/>"
+        f"/api/v1.0/start/end<br/><br/>"
+        f"where start = start_date = mm-dd-yyyy<br/>"
+        f"where end = end_date = mm-dd-yyyy<br/>"
     )
 
 
@@ -40,6 +44,10 @@ def index():
 def precipitation():
 
     session = Session(engine)
+    maxYear=session.query(func.extract('year',func.max(Measurement.date))).all() 
+    maxMonth=session.query(func.extract('month',func.max(Measurement.date))).all() 
+    maxDay=session.query(func.extract('day',func.max(Measurement.date))).all() 
+
     results=session.query(Measurement.date,Measurement.prcp)\
         .filter(Measurement.prcp != None)\
         .filter(Measurement.date >= dt.date(maxYear[0][0]-1, maxMonth[0][0], maxDay[0][0])).\
@@ -76,10 +84,13 @@ def stations():
 @app.route("/api/v1.0/tobs")
 def tobs():
     session = Session(engine)
+    maxYear=session.query(func.extract('year',func.max(Measurement.date))).all() 
+    maxMonth=session.query(func.extract('month',func.max(Measurement.date))).all() 
+    maxDay=session.query(func.extract('day',func.max(Measurement.date))).all() 
+
     results=session.query(Measurement.date,Measurement.tobs)\
         .filter(Measurement.tobs != None)\
         .filter(Measurement.date >= dt.date(maxYear[0][0]-1, maxMonth[0][0], maxDay[0][0]))\
-        .filter(Measurement.station == 'USC00519281')\
         .order_by(Measurement.date).all()
     session.close()
 
@@ -107,106 +118,51 @@ def tobs():
     # Return the JSON representation of your dictionary.
 
 
-@app.route("/api/v1.0/<start>")
-def start():
-    email = "peleke@example.com"
+@app.route("/api/v1.0/<string:startDate>") 
+def getStartDate(startDate):
+    session = Session(engine)
+    
+    results=session.query(func.min(Measurement.tobs),\
+        func.avg(Measurement.tobs),func.max(Measurement.tobs))\
+        .filter(Measurement.tobs != None)\
+        .filter(Measurement.date >= datetime.strptime(startDate, '%m-%d-%Y'))\
+        .all()
+    session.close()
 
-    return f"What is the start date? {email}."
+    all_data = []
+    for tmin,tavg,tmax in results:
+        tobs_dict = {}
+        tobs_dict["tmin"] = tmin
+        tobs_dict["tavg"] = tavg
+        tobs_dict["tmax"] = tmax
+        all_data.append(tobs_dict)
+        
+    return jsonify(all_data)
 
-@app.route("/api/v1.0/<start>/<end>")
-def contact():
-    email = "peleke@example.com"
+@app.route("/api/v1.0/<string:startDate>/<string:endDate>")
+def getStartEnd(startDate,endDate):
+    session = Session(engine)
+    
+    results=session.query(func.min(Measurement.tobs),\
+        func.avg(Measurement.tobs),func.max(Measurement.tobs))\
+        .filter(Measurement.tobs != None)\
+        .filter(Measurement.date >= datetime.strptime(startDate, '%m-%d-%Y'))\
+        .filter(Measurement.date <= datetime.strptime(endDate, '%m-%d-%Y'))\
+        .all()
+    session.close()
 
-    return f"Tell me the start and end date {email}."
+    all_data = []
+    for tmin,tavg,tmax in results:
+        tobs_dict = {}
+        tobs_dict["tmin"] = tmin
+        tobs_dict["tavg"] = tavg
+        tobs_dict["tmax"] = tmax
+        all_data.append(tobs_dict)
+        
+    return jsonify(all_data)
 
 
 # 4. Define main behavior
 if __name__ == "__main__":
     app.run(debug=True)
 
-    
-    import numpy as np
-
-import sqlalchemy
-from sqlalchemy.ext.automap import automap_base
-from sqlalchemy.orm import Session
-from sqlalchemy import create_engine, func
-
-from flask import Flask, jsonify
-
-
-#################################################
-# Database Setup
-#################################################
-engine = create_engine("sqlite:///titanic.sqlite")
-
-# reflect an existing database into a new model
-Base = automap_base()
-# reflect the tables
-Base.prepare(engine, reflect=True)
-
-# Save reference to the table
-Passenger = Base.classes.passenger
-
-#################################################
-# Flask Setup
-#################################################
-app = Flask(__name__)
-
-
-#################################################
-# Flask Routes
-#################################################
-
-@app.route("/")
-def welcome():
-    """List all available api routes."""
-    return (
-        f"Available Routes:<br/>"
-        f"/api/v1.0/names<br/>"
-        f"/api/v1.0/passengers"
-    )
-
-
-@app.route("/api/v1.0/names")
-def names():
-    # Create our session (link) from Python to the DB
-    session = Session(engine)
-
-    """Return a list of all passenger names"""
-    # Query all passengers
-    results = session.query(Passenger.name).all()
-
-    session.close()
-
-    # Convert list of tuples into normal list
-    all_names = list(np.ravel(results))
-
-    return jsonify(all_names)
-
-
-@app.route("/api/v1.0/passengers")
-def passengers():
-    # Create our session (link) from Python to the DB
-    session = Session(engine)
-
-    """Return a list of passenger data including the name, age, and sex of each passenger"""
-    # Query all passengers
-    results = session.query(Passenger.name, Passenger.age, Passenger.sex).all()
-
-    session.close()
-
-    # Create a dictionary from the row data and append to a list of all_passengers
-    all_passengers = []
-    for name, age, sex in results:
-        passenger_dict = {}
-        passenger_dict["name"] = name
-        passenger_dict["age"] = age
-        passenger_dict["sex"] = sex
-        all_passengers.append(passenger_dict)
-
-    return jsonify(all_passengers)
-
-
-if __name__ == '__main__':
-    app.run(debug=True)
